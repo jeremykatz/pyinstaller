@@ -13,6 +13,10 @@
  * file path manipulation and other shared data types or functions.
  */
 
+#if defined(__linux__)
+    #define _GNU_SOURCE
+#endif
+
 /* TODO: use safe string functions */
 #define _CRT_SECURE_NO_WARNINGS 1
 
@@ -59,6 +63,27 @@ typedef void (*sighandler_t)(int);
 #include <wchar.h>    /* wchar_t */
 #if defined(__APPLE__) && defined(WINDOWED)
     #include <Carbon/Carbon.h>  /* AppleEventsT */
+#endif
+
+#if defined(__linux__)
+#include <link.h>
+/*
+ * Find the dynamic linker used for the program and copy its
+ * file location. This is a callback from * dl_iterate_phdr().
+ */
+static int
+pyi_getlinker(struct dl_phdr_info *info, size_t size, void *data)
+{
+    int i;
+    for (i = 0; i < info->dlpi_phnum; i++) {
+        if (PT_INTERP == info->dlpi_phdr[i].p_type) {
+            char** dest = (char **) data;
+            dest[0] = strdup((char *) (info->dlpi_addr + info->dlpi_phdr[i].p_vaddr));
+            return 1;
+        }
+    }
+    return 0;
+}
 #endif
 
 /*
@@ -803,7 +828,7 @@ pyi_utils_set_environment(const ARCHIVE_STATUS *status)
     pyi_unsetenv("DYLD_VERSIONED_LIBRARY_PATH");
     pyi_unsetenv("DYLD_ROOT_PATH");
 
-    #else
+    #elif !defined(__linux__)
 
     /* Set library path to temppath. This is only for onefile mode.*/
     if (status->temppath[0] != PYI_NULLCHAR) {
@@ -893,8 +918,26 @@ pyi_utils_create_child(const char *thisfile, const ARCHIVE_STATUS* status,
     int ignore_signals;
     int signum;
 
-    argv_pyi = (char**)calloc(argc + 1, sizeof(char*));
     argc_pyi = 0;
+#if defined(__linux__)
+    argv_pyi = (char**)calloc(argc + 3 + 1, sizeof(char*));
+    if (!dl_iterate_phdr(pyi_getlinker, argv_pyi)) {
+        VS("LOADER: failed to find dynamic linker for child process\n");
+        goto cleanup;
+    }
+    argc_pyi++;
+    argv_pyi[argc_pyi++] = strdup("--library-path");
+    /* Set library path to temppath. This is only for onefile mode.*/
+    if (status->temppath[0] != PYI_NULLCHAR) {
+        argv_pyi[argc_pyi++] = strdup(status->temppath);
+    }
+    /* Set library path to homepath. This is for default onedir mode.*/
+    else {
+        argv_pyi[argc_pyi++] = strdup(status->homepath);
+    }
+#else
+    argv_pyi = (char**)calloc(argc + 1, sizeof(char*));
+#endif
 
     for (i = 0; i < argc; i++) {
     #if defined(__APPLE__) && defined(WINDOWED)
@@ -927,7 +970,11 @@ pyi_utils_create_child(const char *thisfile, const ARCHIVE_STATUS* status,
             VS("WARNING: Application is started by systemd socket,"
                "but we can't set proper LISTEN_PID on it.\n");
         }
+#if defined(__linux__)
+        if (execvp(argv_pyi[0], argv_pyi) < 0) {
+#else
         if (execvp(thisfile, argv_pyi) < 0) {
+#endif
             VS("Failed to exec: %s\n", strerror(errno));
             goto cleanup;
         }

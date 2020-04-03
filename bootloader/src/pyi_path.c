@@ -289,11 +289,9 @@ pyi_path_executable(char *execfile, const char *appname)
 
 #else /* ifdef _WIN32 */
     result = -1;
-    /* On Linux, FreeBSD, and Solaris, we try these /proc paths first
+    /* On FreeBSD, and Solaris, we try these /proc paths first
      */
-    #if defined(__linux__)
-    result = readlink("/proc/self/exe", execfile, PATH_MAX);  /* Linux */
-    #elif defined(__FreeBSD__)
+    #if defined(__FreeBSD__)
     result = readlink("/proc/curproc/file", execfile, PATH_MAX);  /* FreeBSD */
     #elif defined(__sun)
     result = readlink("/proc/self/path/a.out", execfile, PATH_MAX);  /* Solaris */
