@@ -124,6 +124,19 @@ pyi_main(int argc, char * argv[])
 #endif /* ifdef _WIN32 */
 
     if (extractionpath) {
+#ifdef __linux__
+        const char *env_var = "LD_LIBRARY_PATH";
+        const char *env_var_orig = "LD_LIBRARY_PATH_ORIG";
+        char *ld_library_path_orig = pyi_getenv(env_var_orig);
+
+        if (ld_library_path_orig) {
+            pyi_unsetenv(env_var_orig);
+            pyi_setenv(env_var, ld_library_path_orig);
+        }
+        else {
+            pyi_unsetenv(env_var);
+        }
+#endif
         VS("LOADER: Already in the child - running user's code.\n");
 
         /*  If binaries were extracted to temppath,
